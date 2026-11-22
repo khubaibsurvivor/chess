@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Link Chess</title>
+<style>
+  * { box-sizing: border-box; }
+  :root { --b: min(92vw, 560px); --light:#eeeed2; --dark:#769656; }
+  body {
+    margin:0; min-height:100vh; display:flex; justify-content:center; padding:18px 10px;
+    background: radial-gradient(circle at top, #1e293b, #0b1020 70%);
+    color:#e5e7eb; font-family: system-ui, Arial, sans-serif;
+  }
+  .wrap { width: var(--b); }
+  h1 { margin:0 0 10px; font-size: 24px; letter-spacing:1px; text-align:center; }
+  #status { text-align:center; font-weight:700; min-height:26px; margin-bottom:8px; color:#67e8f9; }
+  #status.bad { color:#fda4af; }
+  .invite { display:flex; gap:6px; margin-bottom:10px; }
+  .invite input { flex:1; min-width:0; padding:10px; border-radius:8px; border:1px solid #334155; background:#0f172a; color:#e5e7eb; }
+  button {
+    border:0; border-radius:8px; padding:10px 16px; font-weight:700; cursor:pointer;
+    background:#22d3ee; color:#082f49; font-size:14px;
+  }
+  button:hover { background:#67e8f9; }
+  button.sec { background:#334155; color:#e5e7eb; }
+  button.sec:hover { background:#475569; }
+  #board {
+    width: var(--b); height: var(--b); display:grid;
+    grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+    border:3px solid #1f2937; border-radius:6px; overflow:hidden; user-select:none;
+  }
+  .sq { position:relative; display:flex; align-items:center; justify-content:center;
+        font-size: calc(var(--b) / 8 * 0.78); line-height:1; cursor:pointer; }
+  .sq.l { background:var(--light); } .sq.d { background:var(--dark); }
+  .sq.last { box-shadow: inset 0 0 0 100px rgba(250,204,21,.45); }
+  .sq.sel { box-shadow: inset 0 0 0 100px rgba(56,189,248,.55); }
+  .sq.chk { box-shadow: inset 0 0 0 100px rgba(239,68,68,.65); }
+  .sq.tgt::after { content:''; position:absolute; width:28%; height:28%; border-radius:50%; background:rgba(0,0,0,.28); }
+  .sq.tgt.cap::after { width:86%; height:86%; background:none; border:5px solid rgba(0,0,0,.3); }
+  .pc.w { color:#fff; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000; }
+  .pc.b { color:#111; text-shadow: 0 0 1px #fff; }
+  .coord { position:absolute; font-size: 10px; font-weight:700; opacity:.7; color:#334155; }
+  .coord.r { top:2px; left:3px; } .coord.f { bottom:1px; right:3px; }
+  .bar { display:flex; justify-content:space-between; align-items:center; margin:10px 0; gap:8px; flex-wrap:wrap; }
+  .you { font-size:14px; color:#94a3b8; }
+  #moves { font-size:13px; color:#cbd5e1; background:#0f172a; border:1px solid #1e293b; border-radius:8px;
+           padding:8px 10px; max-height:110px; overflow:auto; line-height:1.6; }
+  .mbox { background:#0f172a; border:1px solid #334155; border-radius:10px; padding:12px; margin-bottom:10px; font-size:14px; }
+  .mbox textarea { width:100%; height:70px; background:#020617; color:#e5e7eb; border:1px solid #334155; border-radius:6px; padding:6px; font-size:12px; resize:vertical; }
+  #promo { position:fixed; inset:0; background:#000a; display:none; place-items:center; z-index:10; }
+  #promo.show { display:grid; }
+  #promo .box { background:#0f172a; padding:16px; border-radius:12px; text-align:center; }
+  #promo button { font-size:42px; padding:6px 14px; margin:4px; background:#e2e8f0; color:#111; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>♞ LINK CHESS</h1>
+  <div id="status">Starting…</div>
+  <div class="invite" id="invite" style="display:none">
+    <input id="link" readonly>
+    <button id="copy">Copy link</button>
+  </div>
+  <div id="manual" style="display:none">
+    <div class="mbox">
+      <b>Manual connection</b> (works without the PeerJS server)
+      <div id="mHelp" style="margin:6px 0;color:#94a3b8;font-size:13px">One of you clicks "I'm hosting" (plays White), the other clicks "I'm joining" (plays Black).</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button id="mHost">I'm hosting</button>
+        <button id="mJoin" class="sec">I'm joining</button>
+      </div>
+      <textarea id="mOut" readonly placeholder="Your code will appear here — send it to your friend"></textarea>
+      <button class="sec" id="mCopy" style="margin:4px 0 8px">Copy my code</button>
+      <textarea id="mIn" placeholder="Paste your friend's code here"></textarea>
+      <button id="mGo" style="margin-top:4px">Connect</button>
+    </div>
+  </div>
+  <div style="text-align:center;margin-bottom:8px"><a href="#" id="mToggle" style="color:#94a3b8;font-size:13px" onclick="return false">Can't connect? Use manual mode</a></div>
+  <div id="board"></div>
+  <div class="bar">
+    <div class="you" id="you"></div>
+    <div>
+      <button class="sec" id="rematch">Rematch</button>
+      <button class="sec" id="resign">Resign</button>
+    </div>
+  </div>
+  <div id="moves">No moves yet.</div>
+</div>
+<div id="promo"><div class="box" id="promoBox"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+const GLYPH = {k:'\u265A',q:'\u265B',r:'\u265C',b:'\u265D',n:'\u265E',p:'\u265F'};
+const game = new Chess();
+let peer, conn = null, myColor = null;   // 'w' or 'b'
+let selected = null, targets = [], over = null, lastMove = null, pendingPromo = null;
+let connected = false, isHost = false;
+
+const $ = id => document.getElementById(id);
+const boardEl = $('board'), statusEl = $('status');
+
+/* ---------- networking ---------- */
+function randId() { return 'chess-' + Math.random().toString(36).slice(2, 8); }
+
+function init() {
+  const hostId = location.hash.slice(1);
+  if (hostId) { isHost = false; myColor = 'b'; startGuest(hostId); }
+  else { isHost = true; myColor = 'w'; startHost(); }
+  setTimeout(() => { if (!connected && !pc && !(peer && peer.open)) showManual(); }, 8000);
+  render();
+}
+
+function startHost() {
+  const id = randId();
+  peer = new Peer(id);
+  peer.on('open', id => {
+    const url = location.href.split('#')[0] + '#' + id;
+    $('link').value = url; $('invite').style.display = 'flex';
+    setStatus('Send the link to your friend and wait…');
+  });
+  peer.on('connection', c => {
+    if (conn && conn.open) { c.close(); return; }
+    setupConn(c);
+  });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id') startHost(); else { setStatus('Server unreachable — use manual mode below.', true); showManual(); }
+  });
+}
+
+function startGuest(hostId) {
+  setStatus('Connecting to your friend…');
+  peer = new Peer();
+  peer.on('open', () => setupConn(peer.connect(hostId, { reliable: true })));
+  peer.on('error', e => {
+    setStatus(e.type === 'peer-unavailable' ? 'Game not found. Is the host page still open?' : 'Server unreachable — use manual mode below.', true);
+    if (e.type !== 'peer-unavailable') showManual();
+  });
+}
+
+function setupConn(c) {
+  conn = c;
+  c.on('open', () => {
+    connected = true;
+    $('invite').style.display = 'none';
+    if (isHost) send({ t: 'sync', pgn: game.pgn(), over, hostColor: myColor });
+    updateStatus(); render();
+  });
+  c.on('data', onData);
+  c.on('close', () => { connected = false; conn = null; setStatus('Friend disconnected. ' + (isHost ? 'Share the link again to reconnect.' : 'Refresh to reconnect.'), true); });
+}
+
+function send(m) { if (conn && conn.open) conn.send(m); }
+
+function onData(m) {
+  if (m.t === 'sync') {
+    game.load_pgn(m.pgn || '');
+    over = m.over || null;
+    myColor = m.hostColor === 'w' ? 'b' : 'w';
+    const h = game.history({ verbose: true }); lastMove = h.length ? h[h.length - 1] : null;
+    checkEnd(); updateStatus(); render();
+  } else if (m.t === 'move') {
+    const mv = game.move({ from: m.from, to: m.to, promotion: m.promotion });
+    if (mv) { lastMove = mv; selected = null; targets = []; checkEnd(); updateStatus(); render(); }
+  } else if (m.t === 'resign') {
+    over = (myColor === 'w' ? 'White' : 'Black') + ' wins — opponent resigned.';
+    updateStatus(); render();
+  } else if (m.t === 'rematch') {
+    if (confirm('Your friend wants a rematch (colors swap). Accept?')) { send({ t: 'rematch-ok' }); newGame(); }
+  } else if (m.t === 'rematch-ok') { newGame(); }
+}
+
+function newGame() {
+  game.reset(); over = null; lastMove = null; selected = null; targets = [];
+  myColor = myColor === 'w' ? 'b' : 'w';
+  updateStatus(); render();
+}
+
+/* ---------- manual (copy/paste) connection ---------- */
+let pc = null, manualRole = null;
+function showManual() { $('manual').style.display = 'block'; }
+$('mToggle').onclick = () => { const m = $('manual'); m.style.display = m.style.display === 'none' ? 'block' : 'none'; };
+
+function wrapChannel(dc) {
+  const h = {};
+  const o = {
+    open: false,
+    send: m => dc.send(JSON.stringify(m)),
+    close: () => dc.close(),
+    on: (e, f) => { h[e] = f; if (e === 'open' && dc.readyState === 'open') { o.open = true; setTimeout(f, 0); } }
+  };
+  dc.onopen = () => { o.open = true; h.open && h.open(); };
+  dc.onmessage = ev => h.data && h.data(JSON.parse(ev.data));
+  dc.onclose = () => { o.open = false; h.close && h.close(); };
+  return o;
+}
+function encodeDesc(d) { return btoa(JSON.stringify({ type: d.type, sdp: d.sdp })); }
+function decodeDesc(s) { return JSON.parse(atob(s.trim())); }
+function newPC() {
+  if (peer) { try { peer.destroy(); } catch (e) {} }
+  $('invite').style.display = 'none';
+  return new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+}
+function gathered(p) {
+  return new Promise(res => {
+    if (p.iceGatheringState === 'complete') return res();
+    p.addEventListener('icegatheringstatechange', () => { if (p.iceGatheringState === 'complete') res(); });
+    setTimeout(res, 5000);
+  });
+}
+
+$('mHost').onclick = async () => {
+  manualRole = 'host'; isHost = true; myColor = 'w';
+  pc = newPC();
+  setupConn(wrapChannel(pc.createDataChannel('chess')));
+  await pc.setLocalDescription(await pc.createOffer());
+  await gathered(pc);
+  $('mOut').value = encodeDesc(pc.localDescription);
+  $('mHelp').textContent = '1) Send your code to your friend. 2) Paste their reply code below and press Connect.';
+  setStatus('Waiting for your friend…'); render();
+};
+$('mJoin').onclick = () => {
+  manualRole = 'guest'; isHost = false; myColor = 'b';
+  $('mHelp').textContent = 'Paste the host\'s code below and press Connect, then send back the code that appears.';
+  render();
+};
+$('mGo').onclick = async () => {
+  try {
+    const val = $('mIn').value;
+    if (!val.trim()) return;
+    if (manualRole === 'host') {
+      await pc.setRemoteDescription(decodeDesc(val));
+      setStatus('Connecting…');
+    } else if (manualRole === 'guest') {
+      pc = newPC();
+      pc.ondatachannel = e => setupConn(wrapChannel(e.channel));
+      await pc.setRemoteDescription(decodeDesc(val));
+      await pc.setLocalDescription(await pc.createAnswer());
+      await gathered(pc);
+      $('mOut').value = encodeDesc(pc.localDescription);
+      $('mHelp').textContent = 'Send this reply code to the host. The game starts when they press Connect.';
+      setStatus('Waiting for host to press Connect…');
+    } else { setStatus('Click "I\'m hosting" or "I\'m joining" first.', true); }
+  } catch (err) { setStatus('That code did not work. Check you pasted the whole code.', true); }
+};
+$('mCopy').onclick = () => { $('mOut').select(); try { document.execCommand('copy'); } catch (e) {} };
+
+/* ---------- game logic ---------- */
+function checkEnd() {
+  if (over) return;
+  if (game.in_checkmate()) over = (game.turn() === 'w' ? 'Black' : 'White') + ' wins by checkmate!';
+  else if (game.in_stalemate()) over = 'Draw — stalemate.';
+  else if (game.in_draw()) over = 'Draw.';
+}
+
+function setStatus(t, bad) { statusEl.textContent = t; statusEl.className = bad ? 'bad' : ''; }
+
+function updateStatus() {
+  if (!connected) return;
+  if (over) return setStatus(over);
+  const mine = game.turn() === myColor;
+  let t = mine ? 'Your turn' : "Opponent's turn";
+  if (game.in_check()) t += ' — CHECK!';
+  setStatus(t);
+}
+
+function tryMove(from, to, promotion) {
+  const mv = game.move({ from, to, promotion });
+  if (!mv) return;
+  lastMove = mv; selected = null; targets = [];
+  send({ t: 'move', from, to, promotion });
+  checkEnd(); updateStatus(); render();
+}
+
+function onSquare(sq) {
+  if (!connected || over || game.turn() !== myColor) return;
+  if (selected && targets.includes(sq)) {
+    const piece = game.get(selected);
+    const lastRank = (myColor === 'w' && sq[1] === '8') || (myColor === 'b' && sq[1] === '1');
+    if (piece && piece.type === 'p' && lastRank) { askPromotion(selected, sq); return; }
+    tryMove(selected, sq); return;
+  }
+  const p = game.get(sq);
+  if (p && p.color === myColor) {
+    selected = sq;
+    targets = game.moves({ square: sq, verbose: true }).map(m => m.to);
+  } else { selected = null; targets = []; }
+  render();
+}
+
+function askPromotion(from, to) {
+  const box = $('promoBox'); box.innerHTML = '<div style="margin-bottom:6px;font-weight:700">Promote to</div>';
+  ['q', 'r', 'b', 'n'].forEach(p => {
+    const b = document.createElement('button'); b.textContent = GLYPH[p] + '\uFE0E';
+    b.onclick = () => { $('promo').classList.remove('show'); tryMove(from, to, p); };
+    box.appendChild(b);
+  });
+  $('promo').classList.add('show');
+}
+
+/* ---------- rendering ---------- */
+function render() {
+  boardEl.innerHTML = '';
+  const white = myColor !== 'b';
+  const kingSq = game.in_check() ? findKing(game.turn()) : null;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const file = white ? c : 7 - c, rank = white ? 8 - r : r + 1;
+    const sq = 'abcdefgh'[file] + rank;
+    const d = document.createElement('div');
+    d.className = 'sq ' + ((file + rank) % 2 === 0 ? 'd' : 'l');
+    if (lastMove && (lastMove.from === sq || lastMove.to === sq)) d.classList.add('last');
+    if (sq === selected) d.classList.add('sel');
+    if (sq === kingSq) d.classList.add('chk');
+    const p = game.get(sq);
+    if (targets.includes(sq)) { d.classList.add('tgt'); if (p) d.classList.add('cap'); }
+    if (p) {
+      const s = document.createElement('span');
+      s.className = 'pc ' + p.color; s.textContent = GLYPH[p.type] + '\uFE0E';
+      d.appendChild(s);
+    }
+    if (c === 0) { const n = document.createElement('span'); n.className = 'coord r'; n.textContent = rank; d.appendChild(n); }
+    if (r === 7) { const n = document.createElement('span'); n.className = 'coord f'; n.textContent = 'abcdefgh'[file]; d.appendChild(n); }
+    d.onclick = () => onSquare(sq);
+    boardEl.appendChild(d);
+  }
+  $('you').textContent = 'You play ' + (myColor === 'w' ? 'White ♔' : 'Black ♚');
+  const h = game.history();
+  let out = '';
+  for (let i = 0; i < h.length; i += 2) out += (i / 2 + 1) + '. ' + h[i] + ' ' + (h[i + 1] || '') + '&nbsp;&nbsp; ';
+  $('moves').innerHTML = out || 'No moves yet.';
+  $('moves').scrollTop = 1e6;
+}
+
+function findKing(color) {
+  const b = game.board();
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = b[r][c];
+    if (p && p.type === 'k' && p.color === color) return 'abcdefgh'[c] + (8 - r);
+  }
+  return null;
+}
+
+/* ---------- buttons ---------- */
+$('copy').onclick = () => {
+  const i = $('link'); i.select();
+  (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).catch(() => document.execCommand('copy'));
+  $('copy').textContent = 'Copied!'; setTimeout(() => $('copy').textContent = 'Copy link', 1500);
+};
+$('resign').onclick = () => {
+  if (!connected || over) return;
+  if (!confirm('Resign this game?')) return;
+  over = (myColor === 'w' ? 'Black' : 'White') + ' wins — you resigned.';
+  send({ t: 'resign' }); updateStatus(); render();
+};
+$('rematch').onclick = () => { if (connected) { send({ t: 'rematch' }); setStatus('Rematch requested…'); } };
+
+init();
+</script>
+</body>
+</html>
